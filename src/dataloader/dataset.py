@@ -33,16 +33,7 @@ class UCIHARDatasetLoader:
         self._config_path = config_path
         self._cfg = self._load_config(config_path)
         self._dataset_root = self._resolve_dataset_root()
-
-        # Fixed channel ordering for consistent modeling
-        self._channels = [
-            ("body_acc_x", "acc_x"),
-            ("body_acc_y", "acc_y"),
-            ("body_acc_z", "acc_z"),
-            ("body_gyro_x", "gyro_x"),
-            ("body_gyro_y", "gyro_y"),
-            ("body_gyro_z", "gyro_z"),
-        ]
+        self._channels = self._load_channels()
 
     @staticmethod
     def _load_config(config_path: str) -> Dict:
@@ -53,17 +44,15 @@ class UCIHARDatasetLoader:
 
     def _resolve_dataset_root(self) -> str:
         """
-        Prefer config paths if present. Fall back to the default expected path.
+        Load dataset root path from config.
         """
-        # If you store these in config, this will pick them up.
-        # Otherwise it falls back to standard location.
-        root = None
-        if isinstance(self._cfg, dict):
-            paths = self._cfg.get("paths", {})
-            root = paths.get("dataset_dir", None)
-
-        if root is None:
-            root = os.path.join("data", "raw", "UCI_HAR_Dataset")
+        root = self._cfg.get("paths", {}).get("dataset_dir")
+        
+        if not root:
+            raise ValueError(
+                "dataset_dir not found in config. "
+                "Please check configs/config.yaml"
+            )
 
         if not os.path.isdir(root):
             raise FileNotFoundError(
@@ -72,6 +61,14 @@ class UCIHARDatasetLoader:
             )
 
         return root
+
+    def _load_channels(self) -> List[Tuple[str, str]]:
+        """
+        Load channel definitions from config.
+        Returns list of tuples [(base_name, alias), ...].
+        """
+        channels = self._cfg.get("dataset", {}).get("channels", [])
+        return [(ch[0], ch[1]) for ch in channels]
 
     def get_dataset_root(self) -> str:
         return self._dataset_root
@@ -157,7 +154,8 @@ class UCIHARDatasetLoader:
         """
         Returns a short description string that can be printed in scripts.
         """
+        channel_str = ", ".join([alias for _, alias in self._channels])
         return (
             f"UCIHARDatasetLoader(dataset_root='{self._dataset_root}', "
-            f"channels=[acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z])"
+            f"channels=[{channel_str}])"
         )

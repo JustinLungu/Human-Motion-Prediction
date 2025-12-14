@@ -6,6 +6,7 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 import matplotlib.pyplot as plt
+import yaml
 
 from dataset import UCIHARDatasetLoader
 
@@ -25,20 +26,33 @@ class QuickChecker:
       - saves to results/plots/sample_signals.png
     """
 
-    def __init__(self, output_dir: str = os.path.join("results", "plots")) -> None:
-        self._output_dir = output_dir
+    def __init__(self, config_path: str = "configs/config.yaml") -> None:
+        self._cfg = self._load_config(config_path)
+        
+        # Load paths and visualization settings from config
+        paths = self._cfg.get("paths", {})
+        self._output_dir = paths.get("plot_output_dir", os.path.join("results", "plots"))
         os.makedirs(self._output_dir, exist_ok=True)
 
-        self._activity_names = {
-            1: "WALKING",
-            2: "WALKING_UPSTAIRS",
-            3: "WALKING_DOWNSTAIRS",
-            4: "SITTING",
-            5: "STANDING",
-            6: "LAYING",
-        }
+        # Load activity names and channel names from config
+        quickcheck_cfg = self._cfg.get("quickcheck", {})
+        self._activity_names = quickcheck_cfg.get("activities", {})
+        
+        # Channel names derived from dataset config
+        dataset_cfg = self._cfg.get("dataset", {})
+        channels = dataset_cfg.get("channels", [])
+        self._channel_names = [ch[1] for ch in channels]  # Use aliases
+        
+        # Plot configuration
+        self._plot_cfg = quickcheck_cfg.get("plot", {})
 
-        self._channel_names = ["acc_x", "acc_y", "acc_z", "gyro_x", "gyro_y", "gyro_z"]
+    @staticmethod
+    def _load_config(config_path: str) -> Dict:
+        """Load YAML configuration file."""
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(f"Config not found: {config_path}")
+        with open(config_path, "r") as f:
+            return yaml.safe_load(f)
 
     def run(self) -> QuickcheckResult:
         loader = UCIHARDatasetLoader()
@@ -86,7 +100,11 @@ class QuickChecker:
         """
         t = np.arange(X.shape[1])  # 0..127
 
-        fig, axes = plt.subplots(nrows=6, ncols=1, figsize=(12, 14), sharex=True)
+        # Get plot configuration
+        figsize = self._plot_cfg.get("figsize", [12, 14])
+        dpi = self._plot_cfg.get("dpi", 200)
+
+        fig, axes = plt.subplots(nrows=6, ncols=1, figsize=tuple(figsize), sharex=True)
 
         for row_idx, class_id in enumerate(sorted(indices.keys())):
             ax = axes[row_idx]
@@ -105,7 +123,7 @@ class QuickChecker:
 
         axes[-1].set_xlabel("Time step (0..127)")
         fig.tight_layout()
-        fig.savefig(out_path, dpi=200)
+        fig.savefig(out_path, dpi=dpi)
         plt.close(fig)
 
 
