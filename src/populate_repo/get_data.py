@@ -1,5 +1,3 @@
-# src/populate_repo/get_data.py
-
 import os
 import shutil
 import zipfile
