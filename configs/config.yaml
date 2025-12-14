@@ -1,0 +1,9 @@
+dataset:
+  name: uci_har
+  drive_file_id: "1pxWjPctWGAvybEKD556p6f_bqwXdTdhx"
+  zip_name: "UCI_HAR_Dataset.zip"
+
+paths:
+  raw_data_dir: "data/raw"
+  dataset_dir: "data/raw/UCI_HAR_Dataset"
+  temp_dir: "data/raw/_tmp_uci_har"
