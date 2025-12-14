@@ -2,8 +2,36 @@ dataset:
   name: uci_har
   drive_file_id: "1pxWjPctWGAvybEKD556p6f_bqwXdTdhx"
   zip_name: "UCI_HAR_Dataset.zip"
+  # Inertial signal channels (file names and aliases)
+  channels:
+    - [body_acc_x, acc_x]
+    - [body_acc_y, acc_y]
+    - [body_acc_z, acc_z]
+    - [body_gyro_x, gyro_x]
+    - [body_gyro_y, gyro_y]
+    - [body_gyro_z, gyro_z]
+  # Expected dimensions
+  window_length: 128
+  n_channels: 6
+  label_range: [1, 6]
 
 paths:
   raw_data_dir: "data/raw"
   dataset_dir: "data/raw/UCI_HAR_Dataset"
   temp_dir: "data/raw/_tmp_uci_har"
+  plot_output_dir: "results/plots"
+
+quickcheck:
+  # Activity class labels
+  activities:
+    1: WALKING
+    2: WALKING_UPSTAIRS
+    3: WALKING_DOWNSTAIRS
+    4: SITTING
+    5: STANDING
+    6: LAYING
+  # Plot configuration
+  plot:
+    figsize: [12, 14]
+    dpi: 200
+    filename: "sample_signals.png"
