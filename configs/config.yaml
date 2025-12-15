@@ -56,6 +56,18 @@ models:
     # Tuned via grid search: dt=0.02 (1/50) works best
     dt: 0.02
 
+  pf:
+    # Number of particles for ensemble
+    num_particles: 200
+    # Velocity perturbation scale
+    Q_scale: 1.0
+    # Measurement noise scale (unused in simplified ensemble approach)
+    R_scale: null
+    # Time step for constant-velocity model
+    dt: 0.02
+    # Resampling threshold (unused in simplified approach)
+    resample_threshold: 0.5
+
   run:
     # Where to save metrics
     metrics_dir: "results/metrics"
