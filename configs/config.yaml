@@ -38,9 +38,9 @@ quickcheck:
 
 models:
   rnn:
-    hidden_size: 32
-    epochs: 10
-    batch_size: 32
+    hidden_size: 64
+    epochs: 30
+    batch_size: 64
     learning_rate: 0.001
     # device: null -> autodetect (cpu/cuda)
     device: null
