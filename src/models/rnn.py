@@ -42,7 +42,7 @@ class RNNNet(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            x: shape (batch, 128, 6)
+            x: shape (batch, 127, 6)
         
         Returns:
             shape (batch, 6)
