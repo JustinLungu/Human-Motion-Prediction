@@ -74,3 +74,55 @@ The RNN substantially outperforms the persistence baseline on both training and 
 The RNN’s improved performance demonstrates the benefit of learning temporal structure directly from data. The close match between training and test RMSE suggests good generalization and limited overfitting under the current setup. These results confirm that the signal contains exploitable temporal patterns beyond simple persistence.
 
 The RNN baseline therefore serves as a strong data-driven reference point against which model-based approaches can be compared.
+
+
+## Baseline: Extended Kalman Filter (EKF)
+
+To evaluate a model-based alternative to purely data-driven sequence learning, an Extended Kalman Filter (EKF) baseline was implemented for the same one-step-ahead IMU prediction task. The EKF is used as a structured probabilistic predictor and smoother, explicitly modeling system dynamics and measurement uncertainty.
+
+#### Model formulation
+
+A simple constant-velocity model was adopted independently for each IMU channel:
+- **State**: current signal value and its rate of change
+- **State dimension**: 12 (6 positions + 6 velocities)
+- **Measurement model**: direct observation of the signal values
+- **Dynamics**: linear constant-velocity transition
+
+The filter produces:
+- a filtered estimate of the signal sequence
+- a one-step-ahead prediction of the next IMU sample
+
+Although the resulting system is linear under these assumptions, the EKF framework was retained to maintain consistency with nonlinear Bayesian filtering approaches and to allow future extensions.
+
+All EKF experiments use a timestep of dt = 0.02, corresponding to the 50 Hz sampling rate of the UCI HAR dataset.
+
+Performance is evaluated using the same next-step RMSE metric as the persistence and RNN baselines.
+
+#### Hyperparameter tuning
+
+The EKF process noise covariance Q and measurement noise covariance R were tuned using a small grid search. Measurement noise was initialized from statistics estimated on the training data, while the process noise scale was varied to compensate for mismatch between the assumed constant-velocity dynamics and the true IMU signal behavior.
+
+In addition, multiple values of the timestep parameter dt were evaluated to assess its impact. While using the physically correct timestep (dt=0.02) yielded a modest improvement over larger values, it did not fundamentally change the relative performance of the EKF.
+
+The best-performing configuration was selected based on test RMSE and then frozen.
+
+### Results
+
+- **Metric**: Mean RMSE (lower is better)
+- **Best Train RMSE**: 0.1121
+- **Best Test RMSE**: 0.1099
+
+For reference:
+- **Persistence baseline (test RMSE)**: 0.1077
+- **RNN baseline (test RMSE)**: 0.0652
+
+Despite tuning and use of the correct sampling timestep, the EKF does not outperform the persistence baseline under nominal conditions and remains substantially worse than the RNN.
+
+### Interpretation
+
+These results indicate that the simple constant-velocity EKF model is not well matched to the short-term dynamics of IMU signals in the UCI HAR dataset. While the filter provides smoothing and structured prediction, its linear Gaussian assumptions limit its ability to capture abrupt changes and highly nonlinear motion patterns that occur within short time windows.
+
+The EKF’s performance being close to, but slightly worse than, persistence suggests that for one-step-ahead prediction under clean conditions, short-term temporal continuity already captures much of the predictable structure in the signal. In contrast, the RNN is able to learn more flexible temporal representations directly from data, leading to substantially lower prediction error.
+
+Importantly, the EKF remains a valuable model-based baseline, particularly for robustness analysis. Its explicit noise modeling and structured dynamics provide a meaningful reference point when evaluating behavior under increased noise, drift, and measurement dropout, where probabilistic state estimation methods are expected to show greater relative advantages.
+

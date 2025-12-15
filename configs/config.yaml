@@ -38,12 +38,23 @@ quickcheck:
 
 models:
   rnn:
-    hidden_size: 64
+    hidden_size: 32
     epochs: 30
-    batch_size: 64
+    batch_size: 32
     learning_rate: 0.001
     # device: null -> autodetect (cpu/cuda)
     device: null
+
+  ekf:
+    # Process noise scale (Q = q * I_12x12)
+    # Tuned via grid search: Q_scale=1.0 works best with dt=0.02
+    Q_scale: 1.0
+    # Measurement noise scale (R = r * I_6x6; if null, computed from data)
+    # Tuned via grid search: using data-driven R works best
+    R_scale: null
+    # Time step for constant-velocity model (dt=1/50 for 50Hz sampling)
+    # Tuned via grid search: dt=0.02 (1/50) works best
+    dt: 0.02
 
   run:
     # Where to save metrics
