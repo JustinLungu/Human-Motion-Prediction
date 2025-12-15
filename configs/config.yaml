@@ -50,3 +50,18 @@ models:
     metrics_dir: "results/metrics"
     # Random seed for reproducibility (optional)
     seed: 42
+
+# Degradation experiment parameters used by tests and the runner.
+degrade:
+  # Gaussian noise levels to test (list of sigmas)
+  noise_sigmas: [0.01, 0.1]
+
+  # Bias drift rates to test (small, large)
+  drift_rates: [0.05, 0.5]
+
+  # Dropout defaults
+  dropout:
+    p: 0.2
+    max_gap: 5
+    mode: "hold"
+    seed: 42
