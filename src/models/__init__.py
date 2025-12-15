@@ -7,5 +7,15 @@ implementations.
 
 from .base import BaseModel
 from .baseline import MajorityBaseline
+from .persistence import PersistenceBaseline
+from .rnn import RNNBaseline
+from .evaluate import compute_rmse, evaluate_model
 
-__all__ = ["BaseModel", "MajorityBaseline"]
+__all__ = [
+    "BaseModel",
+    "MajorityBaseline",
+    "PersistenceBaseline",
+    "RNNBaseline",
+    "compute_rmse",
+    "evaluate_model",
+]
