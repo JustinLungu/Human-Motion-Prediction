@@ -79,9 +79,8 @@ class EKFBaseline(BaseModel):
         if self.R_scale is not None:
             self.R = np.eye(6) * self.R_scale
         else:
-            # Use data-driven R scaled by a small factor
-            r_diag = self._R_diag_from_data * 0.1
-            self.R = np.diag(r_diag)
+            # Use measurement variance directly (unscaled); tuning can adjust via R_scale
+            self.R = np.diag(self._R_diag_from_data)
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         """Run EKF filter over sequences and predict next step.
@@ -112,6 +111,11 @@ class EKFBaseline(BaseModel):
     def _filter_and_predict(self, seq: np.ndarray) -> np.ndarray:
         """Run EKF over a single sequence and return next-step prediction.
 
+        Loop order (correct for Kalman filtering):
+        1. Initialize state from z0, update with z0 (no predict step first)
+        2. For t=1..T-1: predict then update with z_t
+        3. Final predict step to get next-step estimate
+
         Args:
             seq: shape (T, 6) - single sequence
 
@@ -121,17 +125,21 @@ class EKFBaseline(BaseModel):
         T, C = seq.shape
         assert C == 6
 
-        # Initialize state: mean position from first frame, zero velocity
+        # Initialize state: position from first frame, zero velocity
         x_hat = np.zeros(12, dtype=np.float64)
-        x_hat[:6] = seq[0, :]  # initial position
+        x_hat[:6] = seq[0, :]  # initial position from z0
         x_hat[6:] = 0.0  # initial velocity
 
         # Initialize covariance (large uncertainty)
         P = np.eye(12, dtype=np.float64) * 1.0
 
-        # Process each observation
-        for t in range(T):
-            z = seq[t, :]  # (6,) measurement
+        # Update with z0 first (before any predict step)
+        z0 = seq[0, :]
+        x_hat, P = self._update_step(x_hat, P, z0)
+
+        # Then for t=1..T-1: predict then update
+        for t in range(1, T):
+            z = seq[t, :]
 
             # Predict step
             x_hat, P = self._predict_step(x_hat, P)
@@ -139,7 +147,7 @@ class EKFBaseline(BaseModel):
             # Update step
             x_hat, P = self._update_step(x_hat, P, z)
 
-        # Predict one step ahead for next-step estimate
+        # Final predict step to get next-step estimate
         x_next, _ = self._predict_step(x_hat, P)
 
         # Return only position (first 6 dims) as the next-step IMU estimate

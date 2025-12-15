@@ -74,3 +74,51 @@ The RNN substantially outperforms the persistence baseline on both training and 
 The RNN’s improved performance demonstrates the benefit of learning temporal structure directly from data. The close match between training and test RMSE suggests good generalization and limited overfitting under the current setup. These results confirm that the signal contains exploitable temporal patterns beyond simple persistence.
 
 The RNN baseline therefore serves as a strong data-driven reference point against which model-based approaches can be compared.
+
+
+## Baseline: Extended Kalman Filter (EKF)
+
+To evaluate a model-based alternative to purely data-driven sequence learning, an Extended Kalman Filter (EKF) baseline was implemented for the same one-step-ahead IMU prediction task. The EKF is used here as a structured predictor and smoother, incorporating explicit assumptions about system dynamics and noise.
+
+#### Model formulation
+
+A simple constant-velocity model was adopted independently for each IMU channel:
+
+- **State**: current signal value and its rate of change
+- **State dimension**: 12 (6 positions + 6 velocities)
+- **Measurement model**: direct observation of the signal values
+- **Dynamics**: linear constant-velocity transition
+
+Although the system is linear under these assumptions, the EKF formulation is retained to allow future extensions and to keep the interface consistent with more general nonlinear models.
+
+The filter produces:
+- a filtered estimate of the signal sequence
+- a one-step-ahead prediction of the next IMU sample
+
+Performance is evaluated using the same next-step RMSE metric as the persistence and RNN baselines.
+
+#### Hyperparameter tuning
+
+The EKF process noise covariance Q and measurement noise covariance R were tuned via a small grid search. Measurement noise was initialized using statistics estimated from the training data, while the process noise scale was varied to account for model mismatch between the assumed constant-velocity dynamics and the true IMU signal behavior.
+
+### Results
+
+- **Metric**: Mean RMSE (lower is better)
+- **Best Train RMSE**: 0.1149
+- **Best Test RMSE**: 0.1124
+
+For reference:
+- **Persistence baseline (test RMSE)**: 0.1077
+- **RNN baseline (test RMSE)**: 0.0652
+
+Despite tuning, the EKF does not outperform the persistence baseline under nominal conditions and remains substantially worse than the RNN.
+
+### Interpretation
+
+These results indicate that the simple constant-velocity EKF model is not well matched to the short-term dynamics of the IMU signals in the UCI HAR dataset. While the EKF provides smoothing and structured prediction, its strong linear and Gaussian assumptions limit its ability to capture abrupt changes and highly nonlinear motion patterns that occur within short windows.
+
+The EKF’s performance being close to, but slightly worse than, persistence suggests that for one-step prediction under clean conditions, the signal dynamics are often better approximated by short-term continuity than by a global linear motion model. In contrast, the RNN is able to learn more flexible temporal representations directly from data, leading to significantly lower prediction error.
+
+Importantly, the EKF remains a valuable baseline as a model-based estimator, particularly for robustness analysis. Its explicit noise modeling and structured dynamics provide a meaningful point of comparison when evaluating behavior under increased noise, drift, and measurement dropout.
+
+
