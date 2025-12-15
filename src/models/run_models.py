@@ -19,6 +19,8 @@ import sys
 import os
 import json
 from typing import Dict
+import yaml
+import random
 
 import numpy as np
 
@@ -45,6 +47,27 @@ def run_models(config_path: str = "configs/config.yaml") -> Dict[str, Dict]:
     Returns:
         dict mapping model name to dict of train and test metrics
     """
+    # Load config
+    cfg = {}
+    if os.path.exists(config_path):
+        with open(config_path, "r") as f:
+            cfg = yaml.safe_load(f) or {}
+
+    # Optional seeding
+    seed = cfg.get("models", {}).get("run", {}).get("seed")
+    if seed is not None:
+        seed = int(seed)
+        np.random.seed(seed)
+        random.seed(seed)
+        try:
+            import torch
+
+            torch.manual_seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(seed)
+        except Exception:
+            pass
+
     # Load train split
     print("=" * 60)
     print("LOADING DATA")
@@ -65,9 +88,10 @@ def run_models(config_path: str = "configs/config.yaml") -> Dict[str, Dict]:
     X_test_in = X_test[:, :-1, :].astype(np.float32)
     y_test_next = X_test[:, -1, :].astype(np.float32)
     
-    T = X_train.shape[1]
-    print(f"Train split: {X_train_in.shape[0]} samples, shape (N, T-1={T-1}, 6)")
-    print(f"Test split:  {X_test_in.shape[0]} samples, shape (N, T-1={T-1}, 6)")
+    T_train = X_train.shape[1]
+    T_test = X_test.shape[1]
+    print(f"Train split: {X_train_in.shape[0]} samples, shape (N, T-1={T_train-1}, 6) (T_train={T_train})")
+    print(f"Test split:  {X_test_in.shape[0]} samples, shape (N, T-1={T_test-1}, 6) (T_test={T_test})")
     print()
     
     results = {}
@@ -81,10 +105,12 @@ def run_models(config_path: str = "configs/config.yaml") -> Dict[str, Dict]:
     
     # Evaluate on train
     preds_persist_train = persistence.predict(X_train_in)
+    _sanity_check_preds(y_train_next, preds_persist_train, persistence.name, "train")
     metrics_persist_train = evaluate_model(y_train_next, preds_persist_train)
     
     # Evaluate on test
     preds_persist_test = persistence.predict(X_test_in)
+    _sanity_check_preds(y_test_next, preds_persist_test, persistence.name, "test")
     metrics_persist_test = evaluate_model(y_test_next, preds_persist_test)
     
     results[persistence.name] = {
@@ -104,16 +130,32 @@ def run_models(config_path: str = "configs/config.yaml") -> Dict[str, Dict]:
     print("=" * 60)
     print("Running: RNN Baseline (LSTM)")
     print("=" * 60)
-    rnn = RNNBaseline(hidden_size=32, epochs=10, batch_size=32)
+    # Build RNN from config
+    rnn_cfg = cfg.get("models", {}).get("rnn", {})
+    rnn_hidden = int(rnn_cfg.get("hidden_size", 32))
+    rnn_epochs = int(rnn_cfg.get("epochs", 10))
+    rnn_batch = int(rnn_cfg.get("batch_size", 32))
+    rnn_lr = float(rnn_cfg.get("learning_rate", 1e-3))
+    rnn_device = rnn_cfg.get("device", None)
+
+    rnn = RNNBaseline(
+        hidden_size=rnn_hidden,
+        epochs=rnn_epochs,
+        batch_size=rnn_batch,
+        learning_rate=rnn_lr,
+        device=rnn_device,
+    )
     print("Training RNN on train split...")
     rnn.fit(X_train_in, y_train_next)
     
     # Evaluate on train
     preds_rnn_train = rnn.predict(X_train_in)
+    _sanity_check_preds(y_train_next, preds_rnn_train, rnn.name, "train")
     metrics_rnn_train = evaluate_model(y_train_next, preds_rnn_train)
     
     # Evaluate on test
     preds_rnn_test = rnn.predict(X_test_in)
+    _sanity_check_preds(y_test_next, preds_rnn_test, rnn.name, "test")
     metrics_rnn_test = evaluate_model(y_test_next, preds_rnn_test)
     
     results[rnn.name] = {
@@ -139,15 +181,16 @@ def run_models(config_path: str = "configs/config.yaml") -> Dict[str, Dict]:
         print(f"{model_name:20s}: train={train_rmse:.6f}  test={test_rmse:.6f}")
     print()
     
-    # Save to JSON
-    _save_metrics(results)
+    # Save to JSON (location from config or default)
+    metrics_dir = cfg.get("models", {}).get("run", {}).get("metrics_dir", "results/metrics")
+    _save_metrics(results, metrics_dir)
     
     return results
 
 
-def _save_metrics(results: Dict[str, Dict]) -> None:
+def _save_metrics(results: Dict[str, Dict], metrics_dir: str = "results/metrics") -> None:
     """Save metrics to results/metrics/ as JSON files."""
-    metrics_dir = Path("results/metrics")
+    metrics_dir = Path(metrics_dir)
     metrics_dir.mkdir(parents=True, exist_ok=True)
     
     for model_name, metrics_dict in results.items():
@@ -165,6 +208,28 @@ def _save_metrics(results: Dict[str, Dict]) -> None:
             json.dump(clean_metrics, f, indent=2)
         
         print(f"Saved metrics to: {output_file}")
+
+
+def _sanity_check_preds(y_true: np.ndarray, y_pred: np.ndarray, model_name: str, split: str) -> None:
+    """Basic sanity checks before evaluation:
+    - predictions shape (N, 6)
+    - no NaNs in preds or targets
+    Raises RuntimeError on failure.
+    """
+    # Shape check
+    if y_pred.ndim != 2 or y_pred.shape[1] != 6 or y_pred.shape[0] != y_true.shape[0]:
+        raise RuntimeError(
+            f"Sanity check failed for {model_name} on {split}: expected preds shape (N,6) matching y_true, got {y_pred.shape} vs {y_true.shape}"
+        )
+
+    # NaN check
+    if np.isnan(y_pred).any():
+        raise RuntimeError(f"Sanity check failed for {model_name} on {split}: preds contain NaN")
+    if np.isnan(y_true).any():
+        raise RuntimeError(f"Sanity check failed for {model_name} on {split}: targets contain NaN")
+
+    # Quick success print
+    print(f"Sanity checks passed for {model_name} on {split}: preds shape {y_pred.shape}, no NaNs")
 
 
 if __name__ == "__main__":

@@ -35,3 +35,18 @@ quickcheck:
     figsize: [12, 14]
     dpi: 200
     filename: "sample_signals.png"
+
+models:
+  rnn:
+    hidden_size: 32
+    epochs: 10
+    batch_size: 32
+    learning_rate: 0.001
+    # device: null -> autodetect (cpu/cuda)
+    device: null
+
+  run:
+    # Where to save metrics
+    metrics_dir: "results/metrics"
+    # Random seed for reproducibility (optional)
+    seed: 42
