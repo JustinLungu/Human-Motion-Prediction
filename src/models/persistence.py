@@ -25,15 +25,15 @@ class PersistenceBaseline(BaseModel):
         pass
 
     def predict(self, X: np.ndarray) -> np.ndarray:
-        """Return the last timestep of each window.
+        """Return the last timestep of each input window.
         
         Args:
-            X: shape (N, 128, 6)
+            X: shape (N, T, 6) where T is the window length (can be any value)
         
         Returns:
             shape (N, 6) - last step of each window
         """
-        if X.ndim != 3 or X.shape[1] != 128 or X.shape[2] != 6:
-            raise ValueError(f"Expected shape (N, 128, 6), got {X.shape}")
+        if X.ndim != 3 or X.shape[2] != 6:
+            raise ValueError(f"Expected shape (N, T, 6), got {X.shape}")
         
         return X[:, -1, :].astype(np.float32)  # (N, 6)

@@ -87,12 +87,12 @@ class RNNBaseline(BaseModel):
         """Train the RNN on the window→next-step task.
         
         Args:
-            X: shape (N, 128, 6) - windows
+            X: shape (N, T, 6) - windows of variable length T
             y: shape (N, 6) - next-step targets
         """
-        if X.shape[1:] != (128, 6) or y.shape != (X.shape[0], 6):
+        if X.ndim != 3 or X.shape[2] != 6 or y.shape != (X.shape[0], 6):
             raise ValueError(
-                f"Expected X shape (N, 128, 6) and y shape (N, 6), "
+                f"Expected X shape (N, T, 6) and y shape (N, 6), "
                 f"got {X.shape} and {y.shape}"
             )
         
@@ -132,7 +132,7 @@ class RNNBaseline(BaseModel):
         """Predict next-step IMU readings.
         
         Args:
-            X: shape (N, 128, 6)
+            X: shape (N, T, 6) - windows of variable length T
         
         Returns:
             shape (N, 6)
@@ -140,8 +140,8 @@ class RNNBaseline(BaseModel):
         if self.model is None:
             raise RuntimeError("Model not fitted yet")
         
-        if X.shape[1:] != (128, 6):
-            raise ValueError(f"Expected shape (N, 128, 6), got {X.shape}")
+        if X.ndim != 3 or X.shape[2] != 6:
+            raise ValueError(f"Expected shape (N, T, 6), got {X.shape}")
         
         X_torch = torch.from_numpy(X).float().to(self.device)
         
