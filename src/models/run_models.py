@@ -34,6 +34,7 @@ from dataloader.dataset import UCIHARDatasetLoader
 from models.evaluate import evaluate_model
 from models.persistence import PersistenceBaseline
 from models.rnn import RNNBaseline
+from models.ekf import EKFBaseline
 
 
 def run_models(config_path: str = "configs/config.yaml") -> Dict[str, Dict]:
@@ -169,6 +170,45 @@ def run_models(config_path: str = "configs/config.yaml") -> Dict[str, Dict]:
     print(f"  Test  - Mean RMSE: {metrics_rnn_test['mean_rmse']:.6f}")
     for ch in range(6):
         print(f"    ch{ch}: {metrics_rnn_test[f'rmse_ch{ch}']:.6f}")
+    print()
+    
+    # Test 3: EKF baseline
+    print("=" * 60)
+    print("Running: EKF Baseline")
+    print("=" * 60)
+    # Build EKF from config
+    ekf_cfg = cfg.get("models", {}).get("ekf", {})
+    ekf_Q_scale = float(ekf_cfg.get("Q_scale", 1e-4))
+    ekf_R_scale = ekf_cfg.get("R_scale")
+    if ekf_R_scale is not None:
+        ekf_R_scale = float(ekf_R_scale)
+    ekf_dt = float(ekf_cfg.get("dt", 1.0))
+
+    ekf = EKFBaseline(Q_scale=ekf_Q_scale, R_scale=ekf_R_scale, dt=ekf_dt)
+    print("Fitting EKF on train split...")
+    ekf.fit(X_train_in, y_train_next)
+    
+    # Evaluate on train
+    preds_ekf_train = ekf.predict(X_train_in)
+    _sanity_check_preds(y_train_next, preds_ekf_train, ekf.name, "train")
+    metrics_ekf_train = evaluate_model(y_train_next, preds_ekf_train)
+    
+    # Evaluate on test
+    preds_ekf_test = ekf.predict(X_test_in)
+    _sanity_check_preds(y_test_next, preds_ekf_test, ekf.name, "test")
+    metrics_ekf_test = evaluate_model(y_test_next, preds_ekf_test)
+    
+    results[ekf.name] = {
+        "train": metrics_ekf_train,
+        "test": metrics_ekf_test,
+    }
+    
+    print(f"  Train - Mean RMSE: {metrics_ekf_train['mean_rmse']:.6f}")
+    for ch in range(6):
+        print(f"    ch{ch}: {metrics_ekf_train[f'rmse_ch{ch}']:.6f}")
+    print(f"  Test  - Mean RMSE: {metrics_ekf_test['mean_rmse']:.6f}")
+    for ch in range(6):
+        print(f"    ch{ch}: {metrics_ekf_test[f'rmse_ch{ch}']:.6f}")
     print()
     
     # Summary
