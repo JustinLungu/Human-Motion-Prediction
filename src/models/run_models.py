@@ -35,6 +35,7 @@ from models.evaluate import evaluate_model
 from models.persistence import PersistenceBaseline
 from models.rnn import RNNBaseline
 from models.ekf import EKFBaseline
+from models.pf import PFBaseline
 
 
 def run_models(config_path: str = "configs/config.yaml") -> Dict[str, Dict]:
@@ -209,6 +210,55 @@ def run_models(config_path: str = "configs/config.yaml") -> Dict[str, Dict]:
     print(f"  Test  - Mean RMSE: {metrics_ekf_test['mean_rmse']:.6f}")
     for ch in range(6):
         print(f"    ch{ch}: {metrics_ekf_test[f'rmse_ch{ch}']:.6f}")
+    print()
+    
+    # Test 4: PF baseline
+    print("=" * 60)
+    print("Running: Particle Filter Baseline")
+    print("=" * 60)
+    # Build PF from config
+    pf_cfg = cfg.get("models", {}).get("pf", {})
+    pf_num_particles = int(pf_cfg.get("num_particles", 100))
+    pf_Q_scale = float(pf_cfg.get("Q_scale", 1.0))
+    pf_R_scale = pf_cfg.get("R_scale")
+    if pf_R_scale is not None:
+        pf_R_scale = float(pf_R_scale)
+    pf_dt = float(pf_cfg.get("dt", 0.02))
+    pf_resample_threshold = float(pf_cfg.get("resample_threshold", 0.5))
+    pf_seed = cfg.get("models", {}).get("run", {}).get("seed")
+
+    pf = PFBaseline(
+        num_particles=pf_num_particles,
+        Q_scale=pf_Q_scale,
+        R_scale=pf_R_scale,
+        dt=pf_dt,
+        resample_threshold=pf_resample_threshold,
+        seed=pf_seed,
+    )
+    print("Fitting PF on train split...")
+    pf.fit(X_train_in, y_train_next)
+    
+    # Evaluate on train
+    preds_pf_train = pf.predict(X_train_in)
+    _sanity_check_preds(y_train_next, preds_pf_train, pf.name, "train")
+    metrics_pf_train = evaluate_model(y_train_next, preds_pf_train)
+    
+    # Evaluate on test
+    preds_pf_test = pf.predict(X_test_in)
+    _sanity_check_preds(y_test_next, preds_pf_test, pf.name, "test")
+    metrics_pf_test = evaluate_model(y_test_next, preds_pf_test)
+    
+    results[pf.name] = {
+        "train": metrics_pf_train,
+        "test": metrics_pf_test,
+    }
+    
+    print(f"  Train - Mean RMSE: {metrics_pf_train['mean_rmse']:.6f}")
+    for ch in range(6):
+        print(f"    ch{ch}: {metrics_pf_train[f'rmse_ch{ch}']:.6f}")
+    print(f"  Test  - Mean RMSE: {metrics_pf_test['mean_rmse']:.6f}")
+    for ch in range(6):
+        print(f"    ch{ch}: {metrics_pf_test[f'rmse_ch{ch}']:.6f}")
     print()
     
     # Summary
