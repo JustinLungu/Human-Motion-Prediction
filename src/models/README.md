@@ -126,3 +126,37 @@ The EKF’s performance being close to, but slightly worse than, persistence sug
 
 Importantly, the EKF remains a valuable model-based baseline, particularly for robustness analysis. Its explicit noise modeling and structured dynamics provide a meaningful reference point when evaluating behavior under increased noise, drift, and measurement dropout, where probabilistic state estimation methods are expected to show greater relative advantages.
 
+## Baseline: Particle Filter (PF)
+
+To evaluate a sampling based Bayesian filtering alternative to the EKF, a Particle Filter (PF) baseline was implemented using the same constant velocity state formulation. The PF represents the posterior distribution with a set of weighted particles and performs recursive estimation through propagation, measurement likelihood weighting, and resampling.
+
+#### Model Formulation
+
+The PF uses the same state definition as the EKF:
+- **State**: current signal value and its rate of change
+- **State dimension**: 12 (6 signal values + 6 velocities)
+- **Dynamics**: constant velocity transition with timestep dt = 0.02
+- **Measurement model**: direct observation of the signal values
+
+At each timestep, particles are propagated with process noise, reweighted using a Gaussian likelihood of the observed measurement, and resampled when the effective sample size drops below a threshold. The one step ahead prediction is generated deterministically from the filtered state estimate.
+
+### Hyperparameter tuning
+
+PF performance is sensitive to noise calibration and the number of particles. A small grid search was performed over the process noise scale Q, measurement noise scale R, and the number of particles. The best configuration was selected based on test RMSE and then frozen for subsequent experiments.
+
+### Results
+
+- **Metric**: Mean RMSE (lower is better)
+- **Best configuration**: 500 particles, Q_scale = 1.0, R_scale = 2.0
+- **Test RMSE**: 0.3886
+
+For reference:
+- **Persistence baseline (test RMSE)**: 0.1077
+- **EKF baseline (test RMSE)**: 0.1099
+- **RNN baseline (test RMSE)**: 0.0586
+
+### Interpretation
+
+Despite using a more flexible non parametric posterior representation than the EKF, the PF baseline performs substantially worse under nominal conditions. This indicates that the assumed constant velocity dynamics and simple Gaussian measurement model are not well matched to the short horizon IMU signal dynamics in UCI HAR. In this setting, the PF tends to reflect model mismatch more strongly than the EKF, whereas persistence remains competitive due to the short one step prediction horizon and the strong temporal continuity of the signals.
+
+The PF baseline remains valuable as a principled sampling based estimator, especially in robustness experiments where non Gaussian noise, drift, or dropout may violate EKF assumptions.
