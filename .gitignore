@@ -1,0 +1,11 @@
+# environment files
+.env
+/uci_project
+
+# data files
+UCI_HAR_Dataset.zip
+_tmp_uci_har*
+UCI_HAR_Dataset*
+
+#extras
+__pycache__/

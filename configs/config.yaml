@@ -1,0 +1,90 @@
+dataset:
+  name: uci_har
+  drive_file_id: "1pxWjPctWGAvybEKD556p6f_bqwXdTdhx"
+  zip_name: "UCI_HAR_Dataset.zip"
+  # Inertial signal channels (file names and aliases)
+  channels:
+    - [body_acc_x, acc_x]
+    - [body_acc_y, acc_y]
+    - [body_acc_z, acc_z]
+    - [body_gyro_x, gyro_x]
+    - [body_gyro_y, gyro_y]
+    - [body_gyro_z, gyro_z]
+  # Expected dimensions
+  window_length: 128
+  n_channels: 6
+  label_range: [1, 6]
+
+paths:
+  raw_data_dir: "data/raw"
+  dataset_dir: "data/raw/UCI_HAR_Dataset"
+  temp_dir: "data/raw/_tmp_uci_har"
+  plot_output_dir: "results/plots"
+
+quickcheck:
+  # Activity class labels
+  activities:
+    1: WALKING
+    2: WALKING_UPSTAIRS
+    3: WALKING_DOWNSTAIRS
+    4: SITTING
+    5: STANDING
+    6: LAYING
+  # Plot configuration
+  plot:
+    figsize: [12, 14]
+    dpi: 200
+    filename: "sample_signals.png"
+
+models:
+  rnn:
+    hidden_size: 32
+    epochs: 30
+    batch_size: 32
+    learning_rate: 0.001
+    # device: null -> autodetect (cpu/cuda)
+    device: null
+
+  ekf:
+    # Process noise scale (Q = q * I_12x12)
+    # Tuned via grid search: Q_scale=1.0 works best with dt=0.02
+    Q_scale: 1.0
+    # Measurement noise scale (R = r * I_6x6; if null, computed from data)
+    # Tuned via grid search: using data-driven R works best
+    R_scale: null
+    # Time step for constant-velocity model (dt=1/50 for 50Hz sampling)
+    # Tuned via grid search: dt=0.02 (1/50) works best
+    dt: 0.02
+
+  pf:
+    # Number of particles for ensemble
+    num_particles: 500
+    # Velocity perturbation scale
+    Q_scale: 1.0
+    # Measurement noise scale (unused in simplified ensemble approach)
+    R_scale: 2.0
+    # Time step for constant-velocity model
+    dt: 0.02
+    # Resampling threshold (unused in simplified approach)
+    resample_threshold: 0.5
+
+  run:
+    # Where to save metrics
+    metrics_dir: "results/metrics"
+    # Random seed for reproducibility (optional)
+    seed: 42
+
+# Degradation experiment parameters used by tests and the runner.
+degrade:
+  # Gaussian noise levels to test (list of sigmas)
+  noise_sigmas: [0.01, 0.1]
+
+  # Bias drift rates to test (small, large)
+  drift_rates: [0.05, 0.5]
+
+  # Dropout defaults
+  dropout:
+    p: 0.2
+    max_gap: 5
+    mode: "hold"
+    seed: 42
