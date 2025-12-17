@@ -58,11 +58,11 @@ models:
 
   pf:
     # Number of particles for ensemble
-    num_particles: 200
+    num_particles: 500
     # Velocity perturbation scale
     Q_scale: 1.0
     # Measurement noise scale (unused in simplified ensemble approach)
-    R_scale: null
+    R_scale: 2.0
     # Time step for constant-velocity model
     dt: 0.02
     # Resampling threshold (unused in simplified approach)
