@@ -66,15 +66,15 @@ class PFBaseline(BaseModel):
         # Initialize RNG
         self.rng = np.random.default_rng(self.seed)
 
-        # Estimate R from measurement differences
-        diffs = np.diff(X, axis=1)
-        meas_var = np.var(diffs, axis=(0, 1))
+        # Compute per-channel variance of the signal over time (measurement variance baseline)
+        # NOTE: use variance of X itself, not differences (differences reflect dynamics)
+        meas_var = np.var(X, axis=(0, 1))
         self._R_diag_from_data = meas_var
 
         # Initialize Q and R
         self.Q = np.eye(12) * self.Q_scale
         if self.R_scale is not None:
-            self.R = np.eye(6) * self.R_scale
+            self.R = np.diag(self._R_diag_from_data * self.R_scale)
         else:
             self.R = np.diag(self._R_diag_from_data)
 
@@ -129,18 +129,17 @@ class PFBaseline(BaseModel):
         else:
             particles[:, 6:] = 0.0
 
-        # 2. Process measurements t=0..T-1
-        for t in range(T):
+        # 2. Standard PF loop (textbook): for t = 1..T-1 -> Predict, Update, Normalize, Resample
+        # Do NOT weight at t=0 (we already initialized particles around z0).
+        for t in range(1, T):
+            # Predict (propagate with process noise)
+            particles = self._propagate(particles)
+
+            # Update weights using measurement z_t
             z_t = seq[t, :]
-
-            # Propagate (skip on first step, will do predict before weight)
-            if t > 0:
-                particles = self._propagate(particles)
-
-            # Weight update
             weights = self._update_weights(particles, weights, z_t)
 
-            # Normalize weights
+            # Normalize weights (with safety)
             weight_sum = weights.sum()
             if weight_sum > 0:
                 weights = weights / weight_sum
@@ -153,11 +152,13 @@ class PFBaseline(BaseModel):
             if ess < threshold:
                 particles, weights = self._resample(particles, weights)
 
-        # 3. Predict one step ahead without measurement update
-        particles_next = self._propagate(particles)
-        x_next = (particles_next[:, :6] * weights.reshape(-1, 1)).sum(axis=0)
+        # 3. Final one-step-ahead prediction: deterministic
+        # Take the weighted mean state, then propagate deterministically (no process noise)
+        state_mean = (particles * weights.reshape(-1, 1)).sum(axis=0)
+        # Deterministic propagation: x += dt * v
+        state_mean[:6] = state_mean[:6] + self.dt * state_mean[6:]
 
-        return x_next
+        return state_mean[:6]
 
     def _propagate(self, particles: np.ndarray) -> np.ndarray:
         """Propagate particles through dynamics with process noise.
