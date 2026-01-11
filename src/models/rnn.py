@@ -92,6 +92,15 @@ class RNNBaseline(BaseModel):
             X: shape (N, T, 6) - windows of variable length T
             y: shape (N, 6) - next-step targets
         """
+        if self.seed is not None:
+            torch.manual_seed(self.seed)
+            np.random.seed(self.seed)
+
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(self.seed)
+                torch.backends.cudnn.deterministic = True
+                torch.backends.cudnn.benchmark = False
+
         if X.ndim != 3 or X.shape[2] != 6 or y.shape != (X.shape[0], 6):
             raise ValueError(
                 f"Expected X shape (N, T, 6) and y shape (N, 6), "
@@ -101,12 +110,6 @@ class RNNBaseline(BaseModel):
         # Ensure we're working with copies to avoid accidental modification
         X = np.asarray(X, dtype=np.float32, copy=True)
         y = np.asarray(y, dtype=np.float32, copy=True)
-        
-        # Set random seed for reproducibility (prevents non-deterministic shuffling)
-        generator = None
-        if self.seed is not None:
-            generator = torch.Generator()
-            generator.manual_seed(int(self.seed))
         
         # Convert to torch
         X_torch = torch.from_numpy(X).float()
