@@ -73,6 +73,7 @@ class RNNBaseline(BaseModel):
         batch_size: int = 32,
         learning_rate: float = 1e-3,
         device: Optional[str] = None,
+        seed: Optional[int] = None,
     ) -> None:
         super().__init__(name="rnn_baseline")
         self.hidden_size = hidden_size
@@ -80,6 +81,7 @@ class RNNBaseline(BaseModel):
         self.batch_size = batch_size
         self.learning_rate = learning_rate
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.seed = seed
         
         self.model: Optional[RNNNet] = None
     
@@ -90,11 +92,24 @@ class RNNBaseline(BaseModel):
             X: shape (N, T, 6) - windows of variable length T
             y: shape (N, 6) - next-step targets
         """
+        if self.seed is not None:
+            torch.manual_seed(self.seed)
+            np.random.seed(self.seed)
+
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(self.seed)
+                torch.backends.cudnn.deterministic = True
+                torch.backends.cudnn.benchmark = False
+
         if X.ndim != 3 or X.shape[2] != 6 or y.shape != (X.shape[0], 6):
             raise ValueError(
                 f"Expected X shape (N, T, 6) and y shape (N, 6), "
                 f"got {X.shape} and {y.shape}"
             )
+        
+        # Ensure we're working with copies to avoid accidental modification
+        X = np.asarray(X, dtype=np.float32, copy=True)
+        y = np.asarray(y, dtype=np.float32, copy=True)
         
         # Convert to torch
         X_torch = torch.from_numpy(X).float()
@@ -143,6 +158,8 @@ class RNNBaseline(BaseModel):
         if X.ndim != 3 or X.shape[2] != 6:
             raise ValueError(f"Expected shape (N, T, 6), got {X.shape}")
         
+        # Ensure we're working with a copy
+        X = np.asarray(X, dtype=np.float32, copy=True)
         X_torch = torch.from_numpy(X).float().to(self.device)
         
         self.model.eval()
