@@ -69,20 +69,25 @@ class PFBaseline(BaseModel):
         # Compute per-channel variance of the signal over time (measurement variance baseline)
         # NOTE: use variance of X itself, not differences (differences reflect dynamics)
         meas_var = np.var(X, axis=(0, 1))
+        # Ensure R is not singular: add small epsilon to prevent zero variance
+        meas_var = np.maximum(meas_var, 1e-10)
         self._R_diag_from_data = meas_var
 
         # Initialize Q and R
-        self.Q = np.eye(12) * self.Q_scale
+        # Ensure Q_scale is non-negative to avoid issues with sqrt
+        Q_scale_safe = max(self.Q_scale, 1e-10)
+        self.Q = np.eye(12) * Q_scale_safe
         if self.R_scale is not None:
             self.R = np.diag(self._R_diag_from_data * self.R_scale)
         else:
             self.R = np.diag(self._R_diag_from_data)
 
-    def predict(self, X: np.ndarray) -> np.ndarray:
+    def predict(self, X: np.ndarray, log_diagnostics: bool = False) -> np.ndarray:
         """Run PF and predict next step.
 
         Args:
             X: shape (N, T, 6)
+            log_diagnostics: if True, collect ESS statistics
 
         Returns:
             shape (N, 6)
@@ -94,26 +99,39 @@ class PFBaseline(BaseModel):
         N, T, C = X.shape
         assert C == 6
 
+        # Initialize diagnostic storage
+        if log_diagnostics:
+            self._all_ess = []
+
         predictions = np.zeros((N, 6), dtype=np.float32)
 
         for n in range(N):
             seq = X[n, :, :]  # (T, 6)
-            x_pred = self._filter_and_predict(seq)
+            x_pred = self._filter_and_predict(seq, log_diagnostics=log_diagnostics)
             predictions[n, :] = x_pred
+            
+            # Aggregate ESS from this sequence
+            if log_diagnostics and hasattr(self, '_ess'):
+                self._all_ess.extend(self._ess)
 
         return predictions
 
-    def _filter_and_predict(self, seq: np.ndarray) -> np.ndarray:
+    def _filter_and_predict(self, seq: np.ndarray, log_diagnostics: bool = False) -> np.ndarray:
         """Run standard PF over full sequence and predict next step.
 
         Args:
             seq: shape (T, 6)
+            log_diagnostics: if True, store ESS statistics
 
         Returns:
             shape (6,)
         """
         T, C = seq.shape
         assert C == 6
+
+        # Initialize ESS storage
+        if log_diagnostics:
+            self._ess = []
 
         # 1. Initialize particles
         particles = np.zeros((self.num_particles, 12), dtype=np.float64)
@@ -123,7 +141,7 @@ class PFBaseline(BaseModel):
         particles[:, :6] = seq[0, :] + self.rng.normal(0, 0.01, size=(self.num_particles, 6))
 
         # Velocity around z_1 - z_0
-        if T > 1:
+        if T > 1 and self.dt > 1e-10:  # Avoid division by zero or near-zero dt
             v_init = (seq[1, :] - seq[0, :]) / self.dt
             particles[:, 6:] = v_init + self.rng.normal(0, 0.01, size=(self.num_particles, 6))
         else:
@@ -148,6 +166,8 @@ class PFBaseline(BaseModel):
 
             # Resample if ESS is low
             ess = 1.0 / np.sum(weights ** 2)
+            if log_diagnostics:
+                self._ess.append(float(ess))
             threshold = self.resample_threshold * self.num_particles
             if ess < threshold:
                 particles, weights = self._resample(particles, weights)
@@ -176,10 +196,13 @@ class PFBaseline(BaseModel):
 
         # Position: x += dt * v + noise
         particles[:, :6] += self.dt * particles[:, 6:]
-        particles[:, :6] += self.rng.normal(0, np.sqrt(self.Q[0, 0]), size=(self.num_particles, 6))
+        # Ensure Q diagonal is non-negative before sqrt
+        Q_pos_std = np.sqrt(max(self.Q[0, 0], 1e-10))
+        particles[:, :6] += self.rng.normal(0, Q_pos_std, size=(self.num_particles, 6))
 
         # Velocity: v += noise
-        particles[:, 6:] += self.rng.normal(0, np.sqrt(self.Q[6, 6]), size=(self.num_particles, 6))
+        Q_vel_std = np.sqrt(max(self.Q[6, 6], 1e-10))
+        particles[:, 6:] += self.rng.normal(0, Q_vel_std, size=(self.num_particles, 6))
 
         return particles
 
@@ -208,8 +231,16 @@ class PFBaseline(BaseModel):
         R_diag = np.maximum(np.diag(self.R), 1e-8)  # Add epsilon floor to avoid division by near-zero
         log_likelihood = -0.5 * (residual ** 2 / R_diag).sum(axis=1)
 
-        # Numerical stability
+        # Numerical stability: handle edge cases
+        if np.any(np.isnan(log_likelihood)) or np.any(np.isinf(log_likelihood)):
+            # If likelihood computation fails, use uniform weights
+            return weights
+        
         max_ll = np.max(log_likelihood)
+        # Handle case where all log_likelihoods are -inf
+        if not np.isfinite(max_ll):
+            return np.ones_like(weights) / len(weights)
+        
         likelihood = np.exp(log_likelihood - max_ll)
 
         # Update weights
@@ -231,8 +262,42 @@ class PFBaseline(BaseModel):
         Returns:
             (resampled particles, uniform weights)
         """
+        # Ensure weights are valid for resampling
+        weights = np.maximum(weights, 0.0)  # Remove any negative weights
+        weight_sum = weights.sum()
+        if weight_sum <= 0 or not np.isfinite(weight_sum):
+            # Fallback to uniform weights if weights are invalid
+            weights = np.ones(self.num_particles) / self.num_particles
+        else:
+            weights = weights / weight_sum  # Normalize
+        
         indices = self.rng.choice(self.num_particles, size=self.num_particles, p=weights)
         particles_new = particles[indices, :].copy()
         weights_new = np.ones(self.num_particles) / self.num_particles
 
         return particles_new, weights_new
+    
+    def get_ess_statistics(self) -> dict:
+        """Return ESS statistics from last filter run.
+        
+        Call after predict() with log_diagnostics=True.
+        
+        Returns:
+            Dictionary with ESS statistics, or empty dict if no diagnostics available
+        """
+        # Use aggregated ESS if available, otherwise per-sequence
+        ess_list = getattr(self, '_all_ess', getattr(self, '_ess', []))
+        
+        if len(ess_list) == 0:
+            return {}
+        
+        ess_array = np.array(ess_list)
+        
+        return {
+            'ess_mean': float(np.mean(ess_array)),
+            'ess_min': float(np.min(ess_array)),
+            'ess_max': float(np.max(ess_array)),
+            'ess_std': float(np.std(ess_array)),
+            'ess_pct_below_threshold': float(np.mean(ess_array < (self.resample_threshold * self.num_particles)) * 100),
+            'num_resamples': int(np.sum(ess_array < (self.resample_threshold * self.num_particles))),
+        }
