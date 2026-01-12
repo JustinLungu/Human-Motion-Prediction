@@ -108,8 +108,8 @@ class RNNBaseline(BaseModel):
             )
         
         # Ensure we're working with copies to avoid accidental modification
-        X = np.asarray(X, dtype=np.float32, copy=True)
-        y = np.asarray(y, dtype=np.float32, copy=True)
+        X = np.array(X, dtype=np.float32, copy=True)
+        y = np.array(y, dtype=np.float32, copy=True)
         
         # Convert to torch
         X_torch = torch.from_numpy(X).float()
@@ -159,7 +159,7 @@ class RNNBaseline(BaseModel):
             raise ValueError(f"Expected shape (N, T, 6), got {X.shape}")
         
         # Ensure we're working with a copy
-        X = np.asarray(X, dtype=np.float32, copy=True)
+        X = np.array(X, dtype=np.float32, copy=True)
         X_torch = torch.from_numpy(X).float().to(self.device)
         
         self.model.eval()

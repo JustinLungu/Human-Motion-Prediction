@@ -17,7 +17,7 @@ if str(SRC_ROOT) not in sys.path:
 
 import numpy as np
 from typing import Dict, Tuple, Optional
-
+from scipy.stats import chi2
 from dataloader.dataset import UCIHARDatasetLoader
 from models.ekf import EKFBaseline
 from models.evaluate import evaluate_model
@@ -76,7 +76,7 @@ def get_aggregated_stats(ekf: EKFBaseline) -> dict:
 def check_filter_stability(
     ekf: EKFBaseline,
     X_sample: np.ndarray,
-    max_mahal: float = 10.0,
+    max_mahal: float = chi2.ppf(0.99, df=6),
     max_innovation_norm: float = 100.0
 ) -> Tuple[bool, Dict[str, float]]:
     """Check if filter is stable on a sample sequence.
