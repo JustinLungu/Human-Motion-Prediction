@@ -69,14 +69,10 @@ class PFBaseline(BaseModel):
         # Compute per-channel variance of the signal over time (measurement variance baseline)
         # NOTE: use variance of X itself, not differences (differences reflect dynamics)
         meas_var = np.var(X, axis=(0, 1))
-        # Ensure R is not singular: add small epsilon to prevent zero variance
-        meas_var = np.maximum(meas_var, 1e-10)
         self._R_diag_from_data = meas_var
 
         # Initialize Q and R
-        # Ensure Q_scale is non-negative to avoid issues with sqrt
-        Q_scale_safe = max(self.Q_scale, 1e-10)
-        self.Q = np.eye(12) * Q_scale_safe
+        self.Q = np.eye(12) * self.Q_scale
         if self.R_scale is not None:
             self.R = np.diag(self._R_diag_from_data * self.R_scale)
         else:
@@ -84,11 +80,11 @@ class PFBaseline(BaseModel):
 
     def predict(self, X: np.ndarray, log_diagnostics: bool = False) -> np.ndarray:
         """Run PF and predict next step.
-
+        
         Args:
             X: shape (N, T, 6)
             log_diagnostics: if True, collect ESS statistics
-
+        
         Returns:
             shape (N, 6)
         """
@@ -109,10 +105,6 @@ class PFBaseline(BaseModel):
             seq = X[n, :, :]  # (T, 6)
             x_pred = self._filter_and_predict(seq, log_diagnostics=log_diagnostics)
             predictions[n, :] = x_pred
-            
-            # Aggregate ESS from this sequence
-            if log_diagnostics and hasattr(self, '_ess'):
-                self._all_ess.extend(self._ess)
 
         return predictions
 
@@ -121,7 +113,7 @@ class PFBaseline(BaseModel):
 
         Args:
             seq: shape (T, 6)
-            log_diagnostics: if True, store ESS statistics
+            log_diagnostics: if True, collect ESS statistics
 
         Returns:
             shape (6,)
@@ -129,7 +121,7 @@ class PFBaseline(BaseModel):
         T, C = seq.shape
         assert C == 6
 
-        # Initialize ESS storage
+        # Initialize diagnostic storage for this sequence
         if log_diagnostics:
             self._ess = []
 
@@ -141,7 +133,7 @@ class PFBaseline(BaseModel):
         particles[:, :6] = seq[0, :] + self.rng.normal(0, 0.01, size=(self.num_particles, 6))
 
         # Velocity around z_1 - z_0
-        if T > 1 and self.dt > 1e-10:  # Avoid division by zero or near-zero dt
+        if T > 1:
             v_init = (seq[1, :] - seq[0, :]) / self.dt
             particles[:, 6:] = v_init + self.rng.normal(0, 0.01, size=(self.num_particles, 6))
         else:
@@ -166,11 +158,20 @@ class PFBaseline(BaseModel):
 
             # Resample if ESS is low
             ess = 1.0 / np.sum(weights ** 2)
-            if log_diagnostics:
-                self._ess.append(float(ess))
             threshold = self.resample_threshold * self.num_particles
+            
+            if log_diagnostics:
+                self._ess.append(ess)
+            
             if ess < threshold:
                 particles, weights = self._resample(particles, weights)
+
+        # Aggregate ESS for this sequence
+        if log_diagnostics and hasattr(self, '_ess'):
+            if hasattr(self, '_all_ess'):
+                self._all_ess.append(self._ess.copy())
+            else:
+                self._all_ess = [self._ess.copy()]
 
         # 3. Final one-step-ahead prediction: deterministic
         # Take the weighted mean state, then propagate deterministically (no process noise)
@@ -196,13 +197,10 @@ class PFBaseline(BaseModel):
 
         # Position: x += dt * v + noise
         particles[:, :6] += self.dt * particles[:, 6:]
-        # Ensure Q diagonal is non-negative before sqrt
-        Q_pos_std = np.sqrt(max(self.Q[0, 0], 1e-10))
-        particles[:, :6] += self.rng.normal(0, Q_pos_std, size=(self.num_particles, 6))
+        particles[:, :6] += self.rng.normal(0, np.sqrt(self.Q[0, 0]), size=(self.num_particles, 6))
 
         # Velocity: v += noise
-        Q_vel_std = np.sqrt(max(self.Q[6, 6], 1e-10))
-        particles[:, 6:] += self.rng.normal(0, Q_vel_std, size=(self.num_particles, 6))
+        particles[:, 6:] += self.rng.normal(0, np.sqrt(self.Q[6, 6]), size=(self.num_particles, 6))
 
         return particles
 
@@ -231,16 +229,8 @@ class PFBaseline(BaseModel):
         R_diag = np.maximum(np.diag(self.R), 1e-8)  # Add epsilon floor to avoid division by near-zero
         log_likelihood = -0.5 * (residual ** 2 / R_diag).sum(axis=1)
 
-        # Numerical stability: handle edge cases
-        if np.any(np.isnan(log_likelihood)) or np.any(np.isinf(log_likelihood)):
-            # If likelihood computation fails, use uniform weights
-            return weights
-        
+        # Numerical stability
         max_ll = np.max(log_likelihood)
-        # Handle case where all log_likelihoods are -inf
-        if not np.isfinite(max_ll):
-            return np.ones_like(weights) / len(weights)
-        
         likelihood = np.exp(log_likelihood - max_ll)
 
         # Update weights
@@ -262,42 +252,125 @@ class PFBaseline(BaseModel):
         Returns:
             (resampled particles, uniform weights)
         """
-        # Ensure weights are valid for resampling
-        weights = np.maximum(weights, 0.0)  # Remove any negative weights
-        weight_sum = weights.sum()
-        if weight_sum <= 0 or not np.isfinite(weight_sum):
-            # Fallback to uniform weights if weights are invalid
-            weights = np.ones(self.num_particles) / self.num_particles
-        else:
-            weights = weights / weight_sum  # Normalize
-        
         indices = self.rng.choice(self.num_particles, size=self.num_particles, p=weights)
         particles_new = particles[indices, :].copy()
         weights_new = np.ones(self.num_particles) / self.num_particles
 
         return particles_new, weights_new
-    
+
     def get_ess_statistics(self) -> dict:
-        """Return ESS statistics from last filter run.
-        
-        Call after predict() with log_diagnostics=True.
+        """Return statistics about ESS from last filter run.
         
         Returns:
-            Dictionary with ESS statistics, or empty dict if no diagnostics available
+            Dictionary with ESS statistics
         """
-        # Use aggregated ESS if available, otherwise per-sequence
         ess_list = getattr(self, '_all_ess', getattr(self, '_ess', []))
         
         if len(ess_list) == 0:
-            return {}
+            return {
+                "mean_ess": np.nan,
+                "min_ess": np.nan,
+                "max_ess": np.nan,
+                "std_ess": np.nan,
+                "ess_pct_below_threshold": np.nan,
+                "num_resamples": np.nan,
+            }
         
-        ess_array = np.array(ess_list)
+        # Flatten all ESS values from all sequences
+        all_ess_values = []
+        num_resamples = 0
+        threshold = self.resample_threshold * self.num_particles
+        
+        for ess_seq in ess_list:
+            all_ess_values.extend(ess_seq)
+            num_resamples += sum(1 for ess in ess_seq if ess < threshold)
+        
+        if len(all_ess_values) == 0:
+            return {
+                "mean_ess": np.nan,
+                "min_ess": np.nan,
+                "max_ess": np.nan,
+                "std_ess": np.nan,
+                "ess_pct_below_threshold": np.nan,
+                "num_resamples": np.nan,
+            }
+        
+        ess_array = np.array(all_ess_values)
         
         return {
-            'ess_mean': float(np.mean(ess_array)),
-            'ess_min': float(np.min(ess_array)),
-            'ess_max': float(np.max(ess_array)),
-            'ess_std': float(np.std(ess_array)),
-            'ess_pct_below_threshold': float(np.mean(ess_array < (self.resample_threshold * self.num_particles)) * 100),
-            'num_resamples': int(np.sum(ess_array < (self.resample_threshold * self.num_particles))),
+            "mean_ess": float(np.mean(ess_array)),
+            "min_ess": float(np.min(ess_array)),
+            "max_ess": float(np.max(ess_array)),
+            "std_ess": float(np.std(ess_array)),
+            "ess_pct_below_threshold": float(np.mean(ess_array < threshold) * 100),
+            "num_resamples": int(num_resamples),
         }
+
+    def plot_ess_curves(self, save_path: Optional[str] = None):
+        """Plot average ESS curve across all sequences.
+        
+        Args:
+            save_path: Optional path to save the plot
+            
+        Returns:
+            matplotlib figure or None
+        """
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            print("Warning: matplotlib not available, cannot plot ESS curves")
+            return None
+        
+        ess_list = getattr(self, '_all_ess', getattr(self, '_ess', []))
+        
+        if len(ess_list) == 0:
+            print("No ESS data available. Run predict() with log_diagnostics=True first.")
+            return None
+        
+        # Find maximum sequence length
+        max_len = max(len(ess_seq) for ess_seq in ess_list)
+        
+        # Pad sequences to same length and compute average
+        ess_matrix = []
+        for ess_seq in ess_list:
+            padded = np.pad(ess_seq, (0, max_len - len(ess_seq)), mode='constant', constant_values=np.nan)
+            ess_matrix.append(padded)
+        
+        ess_matrix = np.array(ess_matrix)
+        
+        # Compute mean and std across sequences (ignoring NaN)
+        ess_mean = np.nanmean(ess_matrix, axis=0)
+        ess_std = np.nanstd(ess_matrix, axis=0)
+        
+        # Create single plot
+        fig, ax = plt.subplots(figsize=(12, 6))
+        time_steps = np.arange(len(ess_mean))
+        threshold = self.resample_threshold * self.num_particles
+        
+        # Plot average ESS curve with std band
+        ax.plot(time_steps, ess_mean, 'b-', linewidth=2, label='Mean ESS', alpha=0.8)
+        ax.fill_between(time_steps, ess_mean - ess_std, ess_mean + ess_std, 
+                       alpha=0.3, color='blue', label='±1 Std')
+        
+        # Plot threshold line
+        ax.axhline(y=threshold, color='r', linestyle='--', linewidth=2, 
+                  label=f'Resample Threshold ({threshold:.1f})', alpha=0.7)
+        
+        # Plot max ESS line (num_particles)
+        ax.axhline(y=self.num_particles, color='g', linestyle=':', linewidth=1.5,
+                  label=f'Max ESS ({self.num_particles})', alpha=0.5)
+        
+        ax.set_xlabel('Time Step', fontsize=12)
+        ax.set_ylabel('ESS', fontsize=12)
+        ax.set_title(f'Average ESS Curve (N={self.num_particles}, threshold={self.resample_threshold:.2f}, {len(ess_list)} sequences)',
+                    fontsize=14, fontweight='bold')
+        ax.legend(fontsize=10)
+        ax.grid(True, alpha=0.3)
+        ax.set_ylim(bottom=0)
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=200, bbox_inches='tight')
+        
+        return fig
