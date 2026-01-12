@@ -3,7 +3,9 @@ Comprehensive experiments runner for next-step IMU prediction models.
 
 Models tested: Persistence, EKF, PF, RNN
 Conditions tested: Nominal, Noise, Dropout, Drift
-Outputs: results/metrics/metrics.json, plots
+Outputs: results/metrics/metrics.json
+
+Note: Plotting functionality has been moved to degradation_plotter.py
 """
 
 from __future__ import annotations
@@ -14,7 +16,6 @@ import random
 from pathlib import Path
 from typing import Dict, List, Callable, Optional
 
-import matplotlib.pyplot as plt
 import numpy as np
 import yaml
 from scipy.stats import chi2
@@ -217,105 +218,6 @@ def run_drift_experiments(
         add_bias_drift, {"seed": seed}, progress
     )
 
-def _plot_error_vs_param(
-    all_results: Dict[str, Dict],
-    param_values: List[float],
-    models: List[str],
-    condition: str,
-    param_name: str,
-    xlabel: str,
-    title: str,
-    output_path: str,
-) -> None:
-    """Generic function to plot error vs parameter."""
-    fig, ax = plt.subplots(figsize=(10, 6))
-    for model_name in models:
-        rmse_values = []
-        params_used = []
-        for param_val in param_values:
-            key = f"{model_name}_{condition}_{param_val:.4f}"
-            if key in all_results:
-                rmse_values.append(all_results[key]["mean_rmse"])
-                params_used.append(param_val)
-        if rmse_values:
-            ax.plot(params_used, rmse_values, marker='o', label=model_name, linewidth=2)
-    ax.set_xlabel(xlabel, fontsize=12)
-    ax.set_ylabel("Mean RMSE", fontsize=12)
-    ax.set_title(title, fontsize=14, fontweight='bold')
-    ax.legend(fontsize=10)
-    ax.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=200, bbox_inches='tight')
-    print(f"Saved plot: {output_path}")
-    plt.close()
-
-def plot_error_vs_noise(
-    all_results: Dict[str, Dict],
-    noise_sigmas: List[float],
-    models: List[str],
-    output_path: str,
-) -> None:
-    """Plot error vs noise sigma for each model."""
-    _plot_error_vs_param(all_results, noise_sigmas, models, "noise", "sigma",
-                        "Noise Sigma", "Error vs Noise Level", output_path)
-
-def plot_error_vs_dropout(
-    all_results: Dict[str, Dict],
-    dropout_ps: List[float],
-    models: List[str],
-    output_path: str,
-) -> None:
-    """Plot error vs dropout probability for each model."""
-    _plot_error_vs_param(all_results, dropout_ps, models, "dropout", "p",
-                        "Dropout Probability (p)", "Error vs Dropout Level", output_path)
-
-def plot_error_vs_drift(
-    all_results: Dict[str, Dict],
-    drift_rates: List[float],
-    models: List[str],
-    output_path: str,
-) -> None:
-    """Plot error vs drift rate for each model."""
-    _plot_error_vs_param(all_results, drift_rates, models, "drift", "drift_rate",
-                        "Drift Rate", "Error vs Drift Level", output_path)
-
-def plot_filtered_trace(
-    models: Dict[str, object],
-    X_test: np.ndarray,
-    y_test: np.ndarray,
-    example_idx: int = 0,
-    channel: int = 0,
-    output_path: str = "results/plots/filtered_traces.png",
-) -> None:
-    """Plot filtered trace for one example sequence per model."""
-    seq = X_test[example_idx, :, :]
-    true_next = y_test[example_idx, channel]
-    full_seq = np.concatenate([seq, y_test[example_idx:example_idx+1, :]], axis=0)
-    time_steps = np.arange(full_seq.shape[0])
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    axes = axes.flatten()
-    model_names = ["persistence", "ekf", "pf", "rnn"]
-    for idx, model_name in enumerate(model_names):
-        if model_name not in models:
-            continue
-        ax = axes[idx]
-        model = models[model_name]
-        seq_input = seq.reshape(1, seq.shape[0], seq.shape[1])
-        pred_next = model.predict(seq_input)[0, channel]
-        ax.plot(time_steps[:-1], full_seq[:-1, channel], 'b-', label='True', linewidth=2, alpha=0.7)
-        ax.plot(time_steps[-1], true_next, 'b*', markersize=12, label='True (next)', alpha=0.7)
-        ax.plot(time_steps[-1], pred_next, 'r^', markersize=12, label='Predicted', alpha=0.7)
-        ax.set_xlabel("Time Step", fontsize=10)
-        ax.set_ylabel(f"Channel {channel}", fontsize=10)
-        ax.set_title(f"{model_name.upper()}", fontsize=12, fontweight='bold')
-        ax.legend(fontsize=9)
-        ax.grid(True, alpha=0.3)
-    plt.suptitle(f"Filtered Traces - Example {example_idx}, Channel {channel}", fontsize=14, fontweight='bold')
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=200, bbox_inches='tight')
-    print(f"Saved plot: {output_path}")
-    plt.close()
-
 def save_metrics_json(all_results: Dict[str, Dict], output_path: str) -> None:
     """Save all results to a single JSON file."""
     output_path = Path(output_path)
@@ -371,14 +273,6 @@ def run_experiment(config_path: str = CONFIG_PATH) -> Dict[str, Dict]:
     
     metrics_path = Path(cfg.get("models", {}).get("run", {}).get("metrics_dir", "results/metrics")) / "metrics.json"
     save_metrics_json(all_results, metrics_path)
-    
-    plots_dir = Path(cfg.get("paths", {}).get("plot_output_dir", "results/plots"))
-    plots_dir.mkdir(parents=True, exist_ok=True)
-    model_names = ["persistence", "ekf", "pf", "rnn"]
-    plot_error_vs_noise(all_results, noise_sigmas, model_names, str(plots_dir / "error_vs_noise.png"))
-    plot_error_vs_dropout(all_results, dropout_ps, model_names, str(plots_dir / "error_vs_dropout.png"))
-    plot_error_vs_drift(all_results, drift_rates, model_names, str(plots_dir / "error_vs_drift.png"))
-    plot_filtered_trace(models, X_test, y_test, example_idx=0, channel=0, output_path=str(plots_dir / "filtered_traces.png"))
     
     print("\n" + "=" * 60)
     print("EXPERIMENTS COMPLETE")
