@@ -1,5 +1,12 @@
 # Human Motion State Estimation Using EKF, Particle Filtering, and RNNs
 
+![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
+![PyTorch](https://img.shields.io/badge/PyTorch-2.2.2-orange.svg)
+![NumPy](https://img.shields.io/badge/NumPy-1.26.4-green.svg)
+![SciPy](https://img.shields.io/badge/SciPy-1.11+-blue.svg)
+![Matplotlib](https://img.shields.io/badge/Matplotlib-3.10.8-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+
 This project performs one-step-ahead prediction and filtering of human IMU signals
 using the UCI Human Activity Recognition (HAR) dataset. It compares three
 estimation approaches:
@@ -76,14 +83,29 @@ by the download script.
 
 ```
 .
-├── configs/        # Configuration files
-├── data/
-│   ├── raw/        # Raw dataset (auto-generated)
-│   └── processed/ # Processed data
-├── results/        # Metrics and plots
-├── report/         # LaTeX report and figures
-├── scripts/        # Setup and utility scripts
-├── src/            # Source code (filters, models, experiments)
-├── requirements.txt
-└── README.md
+├── configs/                    # Configuration files (YAML)
+│   └── config.yaml
+├── data/                       # Dataset storage
+│   ├── raw/                    
+│   └── processed/              
+├── results/                    # Experiment outputs
+│   ├── metrics/                # Evaluation metrics (JSON)
+│   └── plots/                  # Generated visualizations
+├── report/                     # LaTeX report and figures
+├── scripts/                    # Setup and utility scripts
+├── src/                        # Source code
+│   ├── dataloader/             # Data loading and preprocessing
+│   ├── models/                 # Model implementations
+│   │   ├── base.py            # Base model interface
+│   │   ├── persistence.py     # Persistence baseline
+│   │   ├── ekf.py             # Extended Kalman Filter
+│   │   ├── pf.py              # Particle Filter
+│   │   ├── rnn.py             # PyTorch RNN baseline
+│   │   ├── degrade.py         # Data degradation utilities
+│   │   ├── evaluation/        # Model evaluation
+│   │   └── experiments/       # Experiment runners
+│   ├── tuning/                 # Hyperparameter tuning
+│   └── utils/                  # Utility functions
+├── requirements.txt            # Python dependencies
+└── README.md                   # This file
 ```

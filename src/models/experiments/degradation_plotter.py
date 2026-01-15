@@ -24,7 +24,12 @@ import numpy as np
 
 
 # Ensure src root is on sys.path (for consistency with other scripts)
-SRC_ROOT = Path(__file__).resolve().parents[1]  # .../src
+# File is at src/models/experiments/degradation_plotter.py
+# parents[0] = src/models/experiments/
+# parents[1] = src/models/
+# parents[2] = src/
+# parents[3] = project root
+SRC_ROOT = Path(__file__).resolve().parents[2]  # .../src
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 

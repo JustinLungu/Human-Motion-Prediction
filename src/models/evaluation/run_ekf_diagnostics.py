@@ -15,7 +15,12 @@ import sys
 from pathlib import Path
 
 # Ensure `src` is on sys.path
-SRC_ROOT = Path(__file__).resolve().parents[1]
+# File is at src/models/experiments/run_ekf_diagnostics.py
+# parents[0] = src/models/experiments/
+# parents[1] = src/models/
+# parents[2] = src/
+# parents[3] = project root
+SRC_ROOT = Path(__file__).resolve().parents[2]  # .../src
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 

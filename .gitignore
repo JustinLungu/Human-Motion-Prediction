@@ -9,6 +9,7 @@ UCI_HAR_Dataset*
 
 #extras
 __pycache__/
+.pytest_cache/
 
 # IDE files
 .vscode/

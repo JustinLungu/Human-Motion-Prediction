@@ -15,12 +15,16 @@ import os, sys
 import random
 from pathlib import Path
 from typing import Dict, List, Callable, Optional
-
 import numpy as np
 import yaml
 from scipy.stats import chi2
 
-SRC_ROOT = Path(__file__).resolve().parents[1]
+# File is at src/models/experiments/experiments.py
+# parents[0] = src/models/experiments/
+# parents[1] = src/models/
+# parents[2] = src/
+# parents[3] = project root
+SRC_ROOT = Path(__file__).resolve().parents[2]  # .../src
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
@@ -50,8 +54,6 @@ def set_global_seed(seed: int | None) -> None:
         return
     np.random.seed(int(seed))
     random.seed(int(seed))
-
-
 
 def sanity_check(y_true: np.ndarray, y_pred: np.ndarray, model_name: str, split: str) -> None:
     """Basic sanity checks."""
